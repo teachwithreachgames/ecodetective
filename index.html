@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ecosystem Detective</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Special+Elite&family=VT323&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="brand" type="button" data-action="home" aria-label="Ecosystem Detective — back to title screen">
+    <span class="brand-mark">ED</span>
+    <span class="brand-text">
+      <span class="brand-name">Ecosystem Detective</span>
+      <span class="brand-sub">Ontario Ecology Bureau · Junior Agent Division</span>
+    </span>
+  </button>
+  <div class="topbar-tools">
+    <span class="agent-chip" id="agent-chip" hidden></span>
+    <div class="fp-meter" id="fp-meter" hidden aria-live="polite">
+      <span class="fp-label">Field Points</span>
+      <span class="fp-pips" id="fp-pips"></span>
+    </div>
+    <button class="tool-btn" type="button" data-action="replay-debrief" id="howto-btn" hidden>How to play</button>
+    <button class="tool-btn" type="button" data-action="guide">Field Guide</button>
+    <button class="tool-btn" type="button" data-action="sound" id="sound-btn" aria-pressed="true">Sound: On</button>
+  </div>
+</header>
+
+<main id="app" class="app" tabindex="-1"></main>
+
+<div class="modal-backdrop" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
