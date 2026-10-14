@@ -1309,7 +1309,7 @@ function render() {
   const caseScreens = ["brief", "board", "theory", "solved"];
   const demoOn = !!(state.run && currentCase() && currentCase().demo && caseScreens.includes(state.screen));
   document.documentElement.classList.toggle("presenter", demoOn);
-  const fn = { title: renderTitle, debrief: renderDebrief, hq: renderHQ, cases: () => { state.hqTab = "files"; state.screen = "hq"; return renderHQ(); }, report: () => { state.hqTab = "report"; state.screen = "hq"; return renderHQ(); }, brief: renderBrief, board: renderBoard, theory: renderTheory, solved: renderSolved }[state.screen];
+  const fn = { title: renderTitle, debrief: renderDebrief, hq: renderHQ, cases: () => { state.hqTab = "files"; state.screen = "hq"; return renderHQ(); }, report: () => { state.hqTab = "report"; state.screen = "hq"; return renderHQ(); }, brief: renderBrief, board: renderBoard, theory: renderTheory, solved: renderSolved, finale: renderFinale }[state.screen];
   $app.innerHTML = fn();
   updateTopbar();
   if (state.screen === "board") resumeTyping();
@@ -1545,9 +1545,13 @@ function cityMarks(which, scale) {
 function pinState(c) {
   const p = state.progress;
   if (p.best[c.id]) return "closed";
+  if (caseCollected(c)) return "closed";   // closed on an earlier day (agent code)
   if (p.unlocked.includes(c.id)) return "open";
   return "locked";
 }
+
+// The finale unlocks once the last case is closed.
+function allCasesDone() { return !!state.progress.best[CASES[CASES.length - 1].id]; }
 
 const RANK_ORDER = ["Rookie Agent", "Field Agent", "Senior Detective", "Chief Ecologist"];
 function bestRank() {
@@ -1555,7 +1559,7 @@ function bestRank() {
   Object.values(state.progress.best).forEach((b) => { best = Math.max(best, RANK_ORDER.indexOf(b.rank)); });
   return best >= 0 ? RANK_ORDER[best] : "Trainee";
 }
-function closedCount() { return CASES.filter((c) => state.progress.best[c.id]).length; }
+function closedCount() { return CASES.filter((c) => pinState(c) === "closed").length; }
 function nextOpenCase() { return CASES.find((c) => pinState(c) === "open"); }
 
 /* ---------- Map monitor (Dispatch tab) ---------- */
@@ -1643,7 +1647,7 @@ function renderLocationPanel() {
   const pin = CASE_PINS[c.id];
   const st = pinState(c);
   const best = state.progress.best[c.id];
-  const status = st === "closed" ? `CLOSED · ${best.rank.toUpperCase()}` : st === "open" ? "OPEN" : "LOCKED";
+  const status = st === "closed" ? (best ? `CLOSED · ${best.rank.toUpperCase()}` : "CLOSED") : st === "open" ? "OPEN" : "LOCKED";
   return `<span class="console-label">Location file</span>
     <p class="readout"><b>CASE ${c.num}</b> <span class="status-tag st-${st}">${status}</span></p>
     <p class="readout">${st === "locked" ? "Title classified" : esc(c.title)}</p>
@@ -1652,6 +1656,12 @@ function renderLocationPanel() {
 }
 
 function renderAlertPanel() {
+  if (allCasesDone()) {
+    return `<span class="console-label">Incoming alert</span>
+      <p class="readout"><b>ALL CASES CLOSED</b></p>
+      <p class="readout dim">The Chief has left a final memo for you.</p>
+      <button class="btn btn-console" type="button" data-action="finale">Read the final memo →</button>`;
+  }
   const n = nextOpenCase();
   if (!n) {
     return `<span class="console-label">Incoming alert</span>
@@ -1734,7 +1744,7 @@ function caseCard(c) {
       <h3>${st === "locked" ? "Classified" : esc(c.title)}</h3>
       <span class="case-where">${esc(c.where)}${pin ? ` · ${esc(pin.year)}` : ""}</span>
       <span class="case-skill">${c.demo ? esc(c.skill) : `Skill: ${esc(c.skill)}`}</span>
-      ${best ? `<span class="solved-badge">Closed · ${esc(best.rank)}</span>` : ""}
+      ${best ? `<span class="solved-badge">Closed · ${esc(best.rank)}</span>` : st === "closed" && !c.demo ? `<span class="solved-badge">Closed earlier</span>` : ""}
       ${st === "locked" ? `<span class="case-lock"><span>Locked</span></span>` : ""}
     </button>`;
 }
@@ -1831,10 +1841,11 @@ function renderReportTab() {
           <p class="report-date">${esc(today)}</p>
         </div>
         <div class="report-stats">
-          <span><b>${closed.length}</b> of ${CASES.length} cases closed</span>
+          <span><b>${closed.length}</b> cases closed this class</span>
           <span><b>${sc.have}</b> of ${sc.total} specimens</span>
         </div>
       </div>
+      ${allCasesDone() ? `<p class="report-certified">Certified Ecosystem Detective: all ${CASES.length} case files closed</p>` : ""}
       <div class="report-list">${body}</div>
       <p class="report-howto">To hand this in, take a screenshot: press <kbd>Ctrl</kbd> + <kbd>Show windows</kbd> (the key with the stacked rectangles), then upload it where your teacher asks.</p>
     </div>`;
@@ -2217,10 +2228,100 @@ function renderSolved() {
     </div>
     <div class="row" style="margin-top:22px">
       ${next ? `<button class="btn btn-primary" type="button" data-action="open-case" data-id="${next.id}">Next case: ${esc(next.title)} →</button>` : ""}
+      ${!c.demo && !next && allCasesDone() ? `<button class="btn btn-primary" type="button" data-action="finale">Final memo from the Chief →</button>` : ""}
       <button class="btn" type="button" data-action="replay">Replay this case</button>
       <button class="btn" type="button" data-action="cases">Case files</button>
       <button class="btn" type="button" data-action="hq-tab" data-tab="dispatch">Back to HQ</button>
       ${c.demo ? "" : `<button class="btn" type="button" data-action="report">Agent Report</button>`}
+    </div>
+  </section>`;
+}
+
+
+/* ----------------------------------------------------------
+   FINALE (after the last case is closed)
+   ---------------------------------------------------------- */
+
+const CASE_LESSONS = {
+  c1: "Road salt showed how a change in one abiotic factor can wipe out the tiny animals a creek depends on.",
+  c2: "The emerald ash borer showed how one invasive species, with no predators to stop it, can reshape a whole forest.",
+  c3: "The sea lamprey showed how losing a top predator sends changes rippling through a food web.",
+  c4: "Sudbury's acid rain showed that pollution travels far, and that ecosystems can heal when we fix the cause.",
+  c5: "Lake Erie showed how too many nutrients feed algae, and how decomposers can use up the oxygen a lake needs.",
+  c6: "The silent orchard showed that pollinators connect wild ecosystems to the food on our plates.",
+};
+
+const MISSION_TIPS = [
+  "At home in winter, shovel first and use only a little salt on icy spots.",
+  "Plant native wildflowers. Bees and other pollinators need them for food and shelter.",
+  "Don't move firewood from place to place. Buy it near where you'll burn it.",
+  "If you spot an invasive species, report it to Ontario's Invading Species Awareness Program.",
+  "Notice the chains around you: when one thing changes, ask what else might change because of it.",
+];
+
+function renderFinale() {
+  const p = state.progress;
+  const name = p.teacher ? "Teacher" : p.name;
+  const sessionScores = CASES.map((c) => p.best[c.id]).filter(Boolean);
+  const avg = sessionScores.length ? Math.round(sessionScores.reduce((s, b) => s + b.score, 0) / sessionScores.length) : null;
+  const sc = specimenCount();
+  const lessons = CASES.map((c) => {
+    const b = p.best[c.id];
+    return `<li>
+      <div class="lesson-head"><span class="case-num">CASE #${c.num}</span><strong>${esc(c.title)}</strong>
+      <span class="lesson-rank">${b ? esc(b.rank) : "Closed earlier"}</span></div>
+      <p>${esc(CASE_LESSONS[c.id] || "")}</p>
+    </li>`;
+  }).join("");
+  return `
+  <section class="folder finale">
+    <div class="folder-tab">Final memo from the Chief</div>
+    <div class="memo finale-memo" data-read>
+      <div class="chief-row">
+        ${chiefFace("pleased", "chief-lg")}
+        <div class="chief-text">
+          <div class="say-row"><h1>Every case is closed, Agent ${esc(name)}.</h1>${sayBtn("Read the Chief's final memo aloud")}</div>
+          <p>When you joined the Bureau, Ontario's ecosystems were full of mysteries. A silent creek. Dying ash trees. Empty nets, clear lakes with no fish, green water and a silent orchard.</p>
+          <p>You solved every one of them, and you did it the way real scientists do: you gathered evidence, ruled out suspects, and traced each problem back to its cause.</p>
+          <p>Here's the most important thing you learned: in an ecosystem, nothing happens on its own. Change one thing, and everything connected to it changes too. That includes the things people do.</p>
+          <p class="sig">— The Chief</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="commendation">
+      <p class="commend-org">Ontario Ecology Bureau</p>
+      <p class="commend-title">Commendation</p>
+      <p>This certifies that</p>
+      <p class="commend-name">Agent ${esc(name)}</p>
+      <p>has closed all ${CASES.length} case files and is hereby named a</p>
+      <p class="commend-rank">Certified Ecosystem Detective</p>
+      <div class="commend-stats">
+        <span><b>${CASES.length}/${CASES.length}</b> cases closed</span>
+        <span><b>${sc.have}/${sc.total}</b> specimens</span>
+        ${avg !== null ? `<span><b>${avg}</b> average score this class</span>` : ""}
+      </div>
+      <p class="commend-date">${esc(new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }))}</p>
+      <span class="commend-stamp" aria-hidden="true">Certified</span>
+    </div>
+
+    <div class="finale-cols">
+      <div data-read>
+        <div class="panel-title">What your cases taught you ${sayBtn("Read the lessons aloud")}</div>
+        <ol class="lesson-list">${lessons}</ol>
+      </div>
+      <div data-read>
+        <div class="panel-title">Your mission continues ${sayBtn("Read your mission aloud")}</div>
+        <p class="mission-intro">Real ecosystem detectives don't stop when the game ends. Here's what you can do in real life:</p>
+        <ul class="mission-list">${MISSION_TIPS.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+      </div>
+    </div>
+
+    <p class="report-howto">Proud of this? Take a screenshot to show your teacher: press <kbd>Ctrl</kbd> + <kbd>Show windows</kbd>.</p>
+    <div class="row" style="margin-top:16px">
+      <button class="btn btn-primary" type="button" data-action="report">My Agent Report</button>
+      <button class="btn" type="button" data-action="hq-tab" data-tab="specimens">My specimen cards</button>
+      <button class="btn" type="button" data-action="hq-tab" data-tab="dispatch">Back to HQ</button>
     </div>
   </section>`;
 }
@@ -2412,21 +2513,23 @@ function showGuide() {
 
 function showRejected(fb) {
   openModal(`
-    <div class="modal-chief">${chiefFace("stern", "chief-sm")}<p class="from">Memo from the Chief</p></div>
+    <div class="chief-modal">${chiefFace("stern", "chief-md")}<div class="chief-modal-body"><p class="from">Memo from the Chief</p>
     <h2 id="modal-title" class="rejected">Accusation rejected</h2>
     <p><strong>${esc(fb.title)}</strong></p>
     <p>${esc(fb.body)}</p>
     <p style="font-size:.9rem;color:var(--ink-soft)">Each rejected accusation lowers your score by 10.</p>
-    <button class="btn btn-primary" type="button" data-action="close-modal">Back to the case</button>`);
+    <button class="btn btn-primary" type="button" data-action="close-modal">Back to the case</button>
+    </div></div>`);
 }
 
 function showConfirmed(name) {
   openModal(`
-    <div class="modal-chief">${chiefFace("pleased", "chief-sm")}<p class="from">Memo from the Chief</p></div>
+    <div class="chief-modal">${chiefFace("pleased", "chief-md")}<div class="chief-modal-body"><p class="from">Memo from the Chief</p>
     <div class="confirm-stamp">Suspect confirmed</div>
     <h2 id="modal-title">${esc(name)}</h2>
     <p>Good work, Agent. You found the main cause. Now prove it: show how it led to the problem, one step at a time.</p>
-    <button class="btn btn-primary" type="button" data-action="to-theory">Build the chain of events →</button>`);
+    <button class="btn btn-primary" type="button" data-action="to-theory">Build the chain of events →</button>
+    </div></div>`);
 }
 
 /* ----------------------------------------------------------
@@ -2436,6 +2539,7 @@ function showConfirmed(name) {
 const actions = {
   home() { go("title"); },
   report() { closeModal(); go("report"); },
+  finale() { closeModal(); sfx.win(); go("finale"); },
   "hq-tab"(el) {
     closeModal();
     state.hqTab = el.dataset.tab;
@@ -2490,13 +2594,14 @@ const actions = {
   speak(el) { speakText(readableText(el), el); },
   hint() {
     openModal(`
-      <div class="modal-chief">${chiefFace("phone", "chief-sm")}<p class="from">Phone line to the Chief</p></div>
+      <div class="chief-modal">${chiefFace("phone", "chief-md")}<div class="chief-modal-body"><p class="from">Phone line to the Chief</p>
       <h2 id="modal-title">Call the Chief?</h2>
       <p>The Chief will give you a hint. Each hint takes 5 points off your case score.</p>
       <div class="row">
         <button class="btn btn-primary" type="button" data-action="hint-confirm">Get a hint (−5 points)</button>
         <button class="btn" type="button" data-action="close-modal">Never mind</button>
-      </div>`);
+      </div>
+    </div></div>`);
   },
   "hint-confirm"() {
     const h = useHint();
@@ -2505,10 +2610,11 @@ const actions = {
     if (!h) return;
     sfx.reveal();
     openModal(`
-      <div class="modal-chief">${chiefFace("phone", "chief-sm")}<p class="from">Phone line to the Chief</p></div>
+      <div class="chief-modal">${chiefFace("phone", "chief-md")}<div class="chief-modal-body"><p class="from">Phone line to the Chief</p>
       <h2 id="modal-title">${esc(h.title)}</h2>
       <p>${esc(h.body)}</p>
-      <button class="btn btn-primary" type="button" data-action="close-modal">Back to the case</button>`);
+      <button class="btn btn-primary" type="button" data-action="close-modal">Back to the case</button>
+    </div></div>`);
   },
   "go-board"() { closeModal(); go("board"); },
   sound() { state.sound = !state.sound; updateTopbar(); sfx.click(); },
